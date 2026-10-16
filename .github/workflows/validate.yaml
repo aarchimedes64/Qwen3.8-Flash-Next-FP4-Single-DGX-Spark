@@ -1,0 +1,13 @@
+name: Validate recipe
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n start.sh stop.sh logs.sh status.sh scripts/common.sh scripts/serve.sh
+      - name: Validate Compose configuration
+        run: docker compose --env-file .env.sample config --quiet
+      - name: Check profile parity and lifecycle behavior
+        run: python3 -m unittest discover -s tests -v

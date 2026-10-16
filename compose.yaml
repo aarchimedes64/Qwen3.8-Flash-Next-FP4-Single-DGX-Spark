@@ -1,0 +1,70 @@
+name: qwen38-fp4-spark
+
+services:
+  vllm:
+    image: ${IMAGE:-eugr/spark-vllm-b12x:latest}
+    restart: unless-stopped
+    init: true
+    gpus: all
+    ipc: host
+    network_mode: host
+    shm_size: 16g
+    stop_grace_period: 120s
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      API_KEY: ${API_KEY:-}
+      MODEL: nvidia/Qwen3.8-Flash-Next-FP4-Local
+      BIND: ${BIND:-0.0.0.0}
+      PORT: ${PORT:-8888}
+      MAX_MODEL_LEN: ${MAX_MODEL_LEN:-262144}
+      MAX_NUM_SEQS: ${MAX_NUM_SEQS:-8}
+      MAX_NUM_BATCHED_TOKENS: ${MAX_NUM_BATCHED_TOKENS:-4096}
+      GPU_MEMORY_UTILIZATION: ${GPU_MEMORY_UTILIZATION:-0.8}
+      VLLM_PLE_TABLE_MEMORY: disk
+      B12X_DISK_BACKEND: io_uring
+      CUTE_DSL_ARCH: sm_121a
+      SAFETENSORS_FAST_GPU: '1'
+      VLLM_WORKER_MULTIPROC_METHOD: spawn
+      VLLM_SSM_CONV_STATE_LAYOUT: DS
+      VLLM_USE_AOT_COMPILE: '1'
+      VLLM_USE_MEGA_AOT_ARTIFACT: '1'
+      VLLM_USE_V2_MODEL_RUNNER: '1'
+      B12X_POLICY_MODE: auto
+      VLLM_MXFP8_LM_HEAD: '1'
+      VLLM_B12X_MOE_FP4_LAYER_MAX_INPUT_SCALE: w13
+      VLLM_B12X_MOE_FP4_FORCE_A16: '1'
+      B12X_W4A16_A4_PREFILL: '1'
+    volumes:
+      - ${HF_CACHE:-${HOME}/.cache/huggingface}:/root/.cache/huggingface
+      - ${VLLM_CACHE:-${HOME}/.cache/vllm}:/root/.cache/vllm
+      - ${FLASHINFER_CACHE:-${HOME}/.cache/flashinfer}:/root/.cache/flashinfer
+      - ${TRITON_CACHE:-${HOME}/.triton}:/root/.triton
+      - ${B12X_CACHE:-${HOME}/.cache/b12x}:/root/.cache/b12x
+      - ./scripts/serve.sh:/opt/recipe/serve.sh:ro
+    entrypoint: [/bin/bash, /opt/recipe/serve.sh]
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          import os, urllib.request;
+          host = os.environ['BIND'];
+          host = '127.0.0.1' if host == '0.0.0.0' else ('[::1]' if host == '::' else host);
+          host = '[' + host + ']' if ':' in host and not host.startswith('[') else host;
+          urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://' + host + ':' + os.environ['PORT'] + '/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      start_period: 60m
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '3'
